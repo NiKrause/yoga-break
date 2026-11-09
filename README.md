@@ -15,8 +15,9 @@ the waiting time. Its texts are English by default and German on request.
 - A call expected to take 90 s or more is "long": the status line under the
   prompt shows `🧘 ~M:SS` counting down, and, at most once per 10 minutes, a
   clip is suggested: a toast plus a band above the prompt with
-  `[Öffnen] [Erledigt] [Später]`. `Öffnen` (hotkey `o` while the band has
-  the focus) opens the clip in the browser with `open` or `xdg-open`.
+  `[Open] [Done] [Later]` (German: `[Öffnen] [Erledigt] [Später]`). `Open`
+  (hotkey `o` while the band has the focus) opens the clip in the browser with
+  `open` or `xdg-open`.
 - The clip is the longest one whose length is at most the expected remaining
   time minus 20 s; clips already suggested today rank after the others.
 - When the tool call ends, or when Claude waits for input, status and band go.
@@ -31,7 +32,6 @@ the waiting time. Its texts are English by default and German on request.
 | `/yoga add <url> <seconds> [teacher] [title]` | appends a clip to `clips.json` |
 | `/yoga open` | opens the clip of the open suggestion |
 | `/yoga lang en\|de` | switches the mod's language |
-| `/yoga debug` | checks every host function the mod relies on and writes a report to `~/.yoga/debug-report.txt` |
 
 ### Language
 
@@ -60,16 +60,21 @@ behaviour listed here; there is nothing else.
 
 - **No network access.** The mod makes no HTTP request and opens no socket.
 - **Host commands:** `open <url>` (macOS) or `xdg-open <url>` (Linux) when you
-  press `Öffnen` or run `/yoga open`, with the clip's own `http(s)` URL and
-  nothing else; `true` once from `/yoga debug`, to check that host commands
-  work at all.
-- **Files:** reads and writes `~/.yoga/clips.json` (your clips) and, from
-  `/yoga debug` only, `~/.yoga/debug-probe.txt` and `~/.yoga/debug-report.txt`.
+  press `Open` or run `/yoga open`. Each is one literal call in the module,
+  with the clip's own `http(s)` URL as its only argument; nothing else is run.
+- **Files:** reads and writes `~/.yoga/clips.json` (your clips), and no other
+  file. Every `$.fs` call in the module names that path in full.
 - **Claude Code's own stores:** the plugin's key-value store for durations,
-  suggestions, completed clips and the skip timer; the session state for the
-  open suggestion; the `HOME` environment variable to find `~/.yoga`.
+  suggestions, completed clips, the skip timer and the language; the session
+  state for the open suggestion; the `HOME` environment variable to find
+  `~/.yoga`.
 - **Interface:** a toast, the band above the prompt, the status line, and
   transcript log lines; the slash command `/yoga`.
+- **Hooks:** `session.start` and `prompt.submit` register `/yoga`; `tool.call`
+  classifies the call, suggests a clip and records the duration; `turn.complete`
+  clears the suggestion; `ui.render` draws the band above the prompt;
+  `command.run` answers `/yoga` only, and answers it itself, as a command
+  handler does, instead of passing the event on.
 - **Nothing is sent anywhere**, no telemetry, no model calls, no data leaves
   the machine.
 

@@ -51,12 +51,6 @@ const MESSAGES = {
     usage: 'Usage: /yoga | /yoga skip | /yoga done <id> | /yoga add <url> <seconds> [teacher] [title] | /yoga open | /yoga lang en|de',
     failed: (args: string, kind: string, msg: string) => `yoga-break: /yoga ${args} failed (${kind}: ${msg}).`,
     noMessage: 'no message',
-    probeHeader: (root: string, isReady: boolean) => `yoga-break diagnostics · mod folder ${root} · /yoga registered: ${isReady ? 'yes' : 'no'}`,
-    probeWritten: 'written',
-    probeSet: 'set',
-    probeReport: (path: string) => `(report also in ${path})`,
-    ok: 'OK  ',
-    fail: 'FAIL',
   },
   de: {
     untitled: 'Ohne Titel',
@@ -99,12 +93,6 @@ const MESSAGES = {
     usage: 'Verwendung: /yoga | /yoga skip | /yoga done <id> | /yoga add <url> <sekunden> [teacher] [titel] | /yoga open | /yoga lang en|de',
     failed: (args: string, kind: string, msg: string) => `yoga-break: /yoga ${args} ist fehlgeschlagen (${kind}: ${msg}).`,
     noMessage: 'ohne Meldung',
-    probeHeader: (root: string, isReady: boolean) => `yoga-break Diagnose · Mod-Ordner ${root} · /yoga registriert: ${isReady ? 'ja' : 'nein'}`,
-    probeWritten: 'geschrieben',
-    probeSet: 'gesetzt',
-    probeReport: (path: string) => `(Bericht auch in ${path})`,
-    ok: 'OK  ',
-    fail: 'FEHL',
   },
 } as const
 
@@ -436,55 +424,6 @@ function splitArgs(text: string): string[] {
   return words
 }
 
-// ---- /yoga debug: which nouns of `$` work here -------------------------------------------
-
-type ProbeResult = { name: string; ok: boolean; detail: string }
-
-async function tryProbe(name: string, run: () => Promise<string>): Promise<ProbeResult> {
-  try {
-    return { name, ok: true, detail: await run() }
-  } catch (error) {
-    return { name, ok: false, detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }
-  }
-}
-
-/** Tries every host noun the mod relies on and reports each outcome, in German. */
-async function probe($: EngineInterface, isReady: boolean): Promise<string> {
-  const root = $.plugin.root
-  const results: ProbeResult[] = []
-  results.push(await tryProbe('clock.now', async () => new Date(await $.clock.now()).toISOString()))
-  results.push(await tryProbe('env.get HOME', async () => String(await $.env.get('HOME'))))
-  results.push(await tryProbe('fs.exists <root>', async () => String(await $.fs.exists(root))))
-  results.push(await tryProbe('fs.exists ~/.yoga/clips.json', async () => `${await clipsPath($)} -> ${await $.fs.exists(await clipsPath($))}`))
-  results.push(await tryProbe('fs.write ~/.yoga/debug-probe.txt', async () => {
-    await $.fs.write((await clipsPath($)).replace(/clips\.json$/, 'debug-probe.txt'), 'fs.write ok\n')
-    return T().probeWritten
-  }))
-  results.push(await tryProbe('store.get', async () => JSON.stringify(await $.store.get(STORE_KEY))?.slice(0, 120) ?? 'undefined'))
-  results.push(await tryProbe('store.set probe', async () => {
-    await $.store.set('probe', { at: await $.clock.now() })
-    return T().probeSet
-  }))
-  results.push(await tryProbe('state.get suggestion', async () => JSON.stringify(await read($, suggestion))))
-  results.push(await tryProbe('process.run true', async () => {
-    const ran = await $.process.run(['true'], { timeoutMs: 5000 })
-    return `exit ${ran.exitCode}`
-  }))
-  const lines = [
-    T().probeHeader(root, isReady),
-    ...results.map(r => `${r.ok ? T().ok : T().fail} ${r.name}: ${r.detail}`),
-  ]
-  const report = lines.join('\n')
-  // The report also goes to a file next to clips.json (never into the mod folder,
-  // which a session under development watches and reloads on every write).
-  const reportPath = (await clipsPath($)).replace(/clips\.json$/, 'debug-report.txt')
-  await tryProbe('fs.write report', async () => {
-    await $.fs.write(reportPath, report + '\n')
-    return ''
-  })
-  return report + '\n' + T().probeReport(reportPath)
-}
-
 // ---- the mod ------------------------------------------------------------------------
 
 const PLUGIN = 'yoga-break'
@@ -509,27 +448,30 @@ async function saveStore($: EngineInterface, store: YogaStore): Promise<void> {
 
 // ---- clips.json ------------------------------------------------------------
 
-async function clipsPath($: EngineInterface): Promise<string> {
-  const home = (await $.env.get('HOME')) ?? '~'
-  return `${home}/.yoga/clips.json`
+// The one file the mod reads and writes is `~/.yoga/clips.json`. Its path is
+// spelled out at every `$.fs` call rather than built in a helper, so that a
+// reader of the module — and the plugin directory's scan — sees from the call
+// itself which file it touches; only `home` varies.
+async function homeDir($: EngineInterface): Promise<string> {
+  return (await $.env.get('HOME')) ?? '~'
 }
 
 /** Writes the sample file when none exists; says so once. */
 async function ensureClipsFile($: EngineInterface): Promise<void> {
-  const path = await clipsPath($)
-  if (await $.fs.exists(path)) return
-  await $.fs.write(path, JSON.stringify(SAMPLE_FILE, null, 2) + '\n')
-  $.ui.log(T().sampleCreated(path))
+  const home = await homeDir($)
+  if (await $.fs.exists(`${home}/.yoga/clips.json`)) return
+  await $.fs.write(`${home}/.yoga/clips.json`, JSON.stringify(SAMPLE_FILE, null, 2) + '\n')
+  $.ui.log(T().sampleCreated(`${home}/.yoga/clips.json`))
 }
 
 /** Reads the clips; a missing or broken file is a warning, never a crash. */
 async function loadClips($: EngineInterface): Promise<{ file: ClipsFile; clips: Clip[] }> {
-  const path = await clipsPath($)
+  const home = await homeDir($)
   let text: string
   try {
-    text = await $.fs.read(path)
+    text = await $.fs.read(`${home}/.yoga/clips.json`)
   } catch {
-    $.ui.log(T().fileUnreadable(path))
+    $.ui.log(T().fileUnreadable(`${home}/.yoga/clips.json`))
     return { file: { clips: [] }, clips: [] }
   }
   const parsed = parseClips(text)
@@ -544,13 +486,20 @@ async function openUrl($: EngineInterface, url: string): Promise<void> {
     $.ui.toast(T().notHttp)
     return
   }
-  for (const argv of [['open', url], ['xdg-open', url]]) {
-    try {
-      const ran = await $.process.run(argv, { timeoutMs: 10_000 })
-      if (ran.exitCode === 0) return
-    } catch {
-      // the opener is not installed on this platform: try the next one
-    }
+  // Two literal calls rather than a loop over a list: the command a mod runs
+  // should be readable from the call itself. `url` is the clip's own http(s)
+  // address, checked just above, and the only thing that varies.
+  try {
+    const ran = await $.process.run(['open', url], { timeoutMs: 10_000 })
+    if (ran.exitCode === 0) return
+  } catch {
+    // no `open` here (not macOS): try the freedesktop opener
+  }
+  try {
+    const ran = await $.process.run(['xdg-open', url], { timeoutMs: 10_000 })
+    if (ran.exitCode === 0) return
+  } catch {
+    // neither opener is installed
   }
   $.ui.toast(T().browserFailed(url))
 }
@@ -776,8 +725,6 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'yoga' }, async ($, e) => {
     const words = splitArgs(e.args)
     const sub = words[0]
-    if (sub === 'debug') return { text: await probe($, isReady) }
-
     const now = await $.clock.now()
     const store = await loadStore($)
 
@@ -860,7 +807,8 @@ export const register: Register = (on, options) => {
         addedAt: new Date(now).toISOString(),
       }
       const next: ClipsFile = { ...file, clips: [...file.clips, clip] }
-      await $.fs.write(await clipsPath($), JSON.stringify(next, null, 2) + '\n')
+      const home = await homeDir($)
+      await $.fs.write(`${home}/.yoga/clips.json`, JSON.stringify(next, null, 2) + '\n')
       return { text: T().added(clip.title, clip.teacher, fmtClock(clip.durationSec), clip.id) }
     }
 
