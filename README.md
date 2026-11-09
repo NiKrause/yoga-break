@@ -42,6 +42,26 @@ the waiting time. UI texts are German; code and comments are English.
 The mod makes no network requests (stage 1) and has no dependencies beyond
 the mod API.
 
+## What the mod runs, reads and writes
+
+The directory's security scan and anyone installing the mod should find every
+behaviour listed here; there is nothing else.
+
+- **No network access.** The mod makes no HTTP request and opens no socket.
+- **Host commands:** `open <url>` (macOS) or `xdg-open <url>` (Linux) when you
+  press `Öffnen` or run `/yoga open`, with the clip's own `http(s)` URL and
+  nothing else; `true` once from `/yoga debug`, to check that host commands
+  work at all.
+- **Files:** reads and writes `~/.yoga/clips.json` (your clips) and, from
+  `/yoga debug` only, `~/.yoga/debug-probe.txt` and `~/.yoga/debug-report.txt`.
+- **Claude Code's own stores:** the plugin's key-value store for durations,
+  suggestions, completed clips and the skip timer; the session state for the
+  open suggestion; the `HOME` environment variable to find `~/.yoga`.
+- **Interface:** a toast, the band above the prompt, the status line, and
+  transcript log lines; the slash command `/yoga`.
+- **Nothing is sent anywhere**, no telemetry, no model calls, no data leaves
+  the machine.
+
 ## Installation
 
 At the prompt of a terminal session running Claude Code:
