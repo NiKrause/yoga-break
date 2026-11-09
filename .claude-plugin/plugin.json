@@ -1,0 +1,8 @@
+{
+  "name": "yoga-break",
+  "version": "0.1.0",
+  "description": "Suggests a short yoga clip that fits into a long tool call's waiting time.",
+  "author": { "name": "Nico Krause" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
