@@ -287,6 +287,38 @@ function findClip(clips: readonly Clip[], id: string): Clip | undefined {
   return byPrefix.length === 1 ? byPrefix[0] : undefined
 }
 
+// ---- command arguments ------------------------------------------------------------------
+
+/**
+ * Splits a command's arguments at whitespace, keeping a "double-quoted" or
+ * 'single-quoted' part as one word without its quotes: /yoga add <url> 300
+ * "Name Name" "Titel mit Leerzeichen".
+ */
+function splitArgs(text: string): string[] {
+  const words: string[] = []
+  let current = ''
+  let quote: '"' | "'" | undefined
+  let isInWord = false
+  for (const ch of text) {
+    if (quote !== undefined) {
+      if (ch === quote) quote = undefined
+      else current += ch
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+      isInWord = true
+    } else if (/\s/.test(ch)) {
+      if (isInWord) words.push(current)
+      current = ''
+      isInWord = false
+    } else {
+      current += ch
+      isInWord = true
+    }
+  }
+  if (isInWord) words.push(current)
+  return words
+}
+
 // ---- /yoga debug: which nouns of `$` work here -------------------------------------------
 
 type ProbeResult = { name: string; ok: boolean; detail: string }
@@ -618,7 +650,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'yoga' }, async ($, e) => {
-    const words = e.args.trim().split(/\s+/).filter(Boolean)
+    const words = splitArgs(e.args)
     const sub = words[0]
     if (sub === 'debug') return { text: await probe($, isReady) }
 
