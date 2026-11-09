@@ -1,5 +1,13 @@
 {
   "name": "yoga-break",
-  "owner": { "name": "Nico Krause" },
-  "plugins": [{ "name": "yoga-break", "source": "./" }]
+  "owner": {
+    "name": "Nico Krause"
+  },
+  "description": "Claude Code mod: fits a short yoga clip into a long tool call's waiting time.",
+  "plugins": [
+    {
+      "name": "yoga-break",
+      "source": "./"
+    }
+  ]
 }
