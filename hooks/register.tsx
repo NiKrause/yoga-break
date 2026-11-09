@@ -3,6 +3,120 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { YogaSuggestion } from '../types'
 
+// ---- texts: English by default, German when the `language` option or `/yoga lang de` says so ----
+
+type Lang = 'en' | 'de'
+
+let lang: Lang = 'en'
+
+const MESSAGES = {
+  en: {
+    untitled: 'Untitled',
+    unknownTeacher: 'unknown',
+    notJson: (why: string) => `clips.json is not valid JSON (${why})`,
+    noClipsField: 'clips.json has no "clips" field holding a list',
+    skipped: (n: number) => `${n} entr${n === 1 ? 'y' : 'ies'} in clips.json skipped (url or durationSec missing)`,
+    sampleCreated: (path: string) => `yoga-break: sample file with 3 clips created: ${path}`,
+    fileUnreadable: (path: string) => `yoga-break: ${path} is missing or unreadable`,
+    sampleFailed: (why: string) => `yoga-break: could not create clips.json (${why})`,
+    notHttp: 'The clip URL is not an http(s) address',
+    browserFailed: (url: string) => `Could not open the browser: ${url}`,
+    done: (title: string, len: string, min: number) => `Done: ${title} (${len}). Today with this clip: ${min} min.`,
+    toast: (free: string, title: string, teacher: string, len: string) => `~${free} free – ${title} with ${teacher} (${len}) · /yoga open`,
+    commandDescription: 'Yoga break: the clip that fits now and the statistics; skip | done <id> | add <url> <sec> [teacher] [title] | open | lang',
+    argumentHint: '[skip | done <id> | add <url> <seconds> [teacher] [title] | open | lang en|de]',
+    band: (free: string, title: string, teacher: string, len: string) => `🧘 ~${free} free – ${title} with ${teacher} (${len}) `,
+    open: 'Open',
+    markDone: 'Done',
+    later: 'Later',
+    noFit: (free: string, margin: number) => `🧘 No clip fits into ~${free} (a clip must be <= remaining time - ${margin} s).`,
+    fitsNow: (title: string, teacher: string, len: string) => `🧘 Fits now: ${title} with ${teacher} (${len})`,
+    id: (id: string) => `   id ${id}`,
+    at: (free: string, isRunning: boolean) =>
+      `   for ~${free} ${isRunning ? 'expected to remain of the running tool call' : 'of assumed waiting time (longest median)'}`,
+    hint: '   /yoga open opens the clip, /yoga done counts it.',
+    today: (min: number, clips: number, suggested: number) => `Today: ${min} yoga minutes (${clips} clips), ${suggested} suggestions`,
+    medians: 'Medians: ',
+    defaultTag: ' (default)',
+    paused: (until: string) => `Suggestions paused until ${until}.`,
+    skipped60: (until: string) => `No yoga suggestions until ${until}.`,
+    nothingOpen: 'No suggestion is open. /yoga shows the clip that fits.',
+    opened: (title: string, url: string) => `Opened: ${title} – ${url}`,
+    usageDone: 'Usage: /yoga done <id> (without an id: the open suggestion).',
+    noSuchClip: (id: string) => `No clip with id ${id} in clips.json.`,
+    usageAdd: 'Usage: /yoga add <url> <seconds> [teacher] [title]',
+    added: (title: string, teacher: string, len: string, id: string) => `Clip added: ${title} with ${teacher} (${len}), id ${id}`,
+    langSet: (l: string) => `Language: ${l === 'de' ? 'Deutsch' : 'English'}.`,
+    usageLang: 'Usage: /yoga lang en | de',
+    usage: 'Usage: /yoga | /yoga skip | /yoga done <id> | /yoga add <url> <seconds> [teacher] [title] | /yoga open | /yoga lang en|de',
+    failed: (args: string, kind: string, msg: string) => `yoga-break: /yoga ${args} failed (${kind}: ${msg}).`,
+    noMessage: 'no message',
+    probeHeader: (root: string, isReady: boolean) => `yoga-break diagnostics · mod folder ${root} · /yoga registered: ${isReady ? 'yes' : 'no'}`,
+    probeWritten: 'written',
+    probeSet: 'set',
+    probeReport: (path: string) => `(report also in ${path})`,
+    ok: 'OK  ',
+    fail: 'FAIL',
+  },
+  de: {
+    untitled: 'Ohne Titel',
+    unknownTeacher: 'unbekannt',
+    notJson: (why: string) => `clips.json ist kein gültiges JSON (${why})`,
+    noClipsField: 'clips.json hat kein Feld "clips" mit einer Liste',
+    skipped: (n: number) => `${n} Eintrag/Einträge in clips.json übersprungen (URL oder durationSec fehlt)`,
+    sampleCreated: (path: string) => `yoga-break: Beispieldatei mit 3 Clips angelegt: ${path}`,
+    fileUnreadable: (path: string) => `yoga-break: ${path} fehlt oder ist nicht lesbar`,
+    sampleFailed: (why: string) => `yoga-break: clips.json konnte nicht angelegt werden (${why})`,
+    notHttp: 'Clip-URL ist keine http(s)-Adresse',
+    browserFailed: (url: string) => `Browser ließ sich nicht öffnen: ${url}`,
+    done: (title: string, len: string, min: number) => `Erledigt: ${title} (${len}). Heute mit diesem Clip: ${min} min.`,
+    toast: (free: string, title: string, teacher: string, len: string) => `~${free} frei – ${title} mit ${teacher} (${len}) · /yoga open`,
+    commandDescription: 'Yoga-Pause: passender Clip und Statistik; skip | done <id> | add <url> <sek> [teacher] [titel] | open | lang',
+    argumentHint: '[skip | done <id> | add <url> <sekunden> [teacher] [titel] | open | lang en|de]',
+    band: (free: string, title: string, teacher: string, len: string) => `🧘 ~${free} frei – ${title} mit ${teacher} (${len}) `,
+    open: 'Öffnen',
+    markDone: 'Erledigt',
+    later: 'Später',
+    noFit: (free: string, margin: number) => `🧘 Kein Clip passt in ~${free} (Clip-Dauer muss <= Restzeit - ${margin} s sein).`,
+    fitsNow: (title: string, teacher: string, len: string) => `🧘 Jetzt passend: ${title} mit ${teacher} (${len})`,
+    id: (id: string) => `   id ${id}`,
+    at: (free: string, isRunning: boolean) =>
+      `   bei ~${free} ${isRunning ? 'erwarteter Restzeit des laufenden Tool-Calls' : 'angenommener Wartezeit (längster Median)'}`,
+    hint: '   /yoga open öffnet den Clip, /yoga done zählt ihn.',
+    today: (min: number, clips: number, suggested: number) => `Heute: ${min} Yoga-Minuten (${clips} Clips), ${suggested} Vorschläge`,
+    medians: 'Mediane: ',
+    defaultTag: ' (Default)',
+    paused: (until: string) => `Vorschläge pausiert bis ${until}.`,
+    skipped60: (until: string) => `Keine Yoga-Vorschläge bis ${until}.`,
+    nothingOpen: 'Kein Vorschlag offen. /yoga zeigt den passenden Clip.',
+    opened: (title: string, url: string) => `Geöffnet: ${title} – ${url}`,
+    usageDone: 'Verwendung: /yoga done <id> (ohne id: der offene Vorschlag).',
+    noSuchClip: (id: string) => `Kein Clip mit id ${id} in clips.json.`,
+    usageAdd: 'Verwendung: /yoga add <url> <sekunden> [teacher] [titel]',
+    added: (title: string, teacher: string, len: string, id: string) => `Clip hinzugefügt: ${title} mit ${teacher} (${len}), id ${id}`,
+    langSet: (l: string) => `Sprache: ${l === 'de' ? 'Deutsch' : 'English'}.`,
+    usageLang: 'Verwendung: /yoga lang en | de',
+    usage: 'Verwendung: /yoga | /yoga skip | /yoga done <id> | /yoga add <url> <sekunden> [teacher] [titel] | /yoga open | /yoga lang en|de',
+    failed: (args: string, kind: string, msg: string) => `yoga-break: /yoga ${args} ist fehlgeschlagen (${kind}: ${msg}).`,
+    noMessage: 'ohne Meldung',
+    probeHeader: (root: string, isReady: boolean) => `yoga-break Diagnose · Mod-Ordner ${root} · /yoga registriert: ${isReady ? 'ja' : 'nein'}`,
+    probeWritten: 'geschrieben',
+    probeSet: 'gesetzt',
+    probeReport: (path: string) => `(Bericht auch in ${path})`,
+    ok: 'OK  ',
+    fail: 'FEHL',
+  },
+} as const
+
+/** The texts of the current language. */
+function T() {
+  return MESSAGES[lang]
+}
+
+function toLang(value: unknown): Lang | undefined {
+  return value === 'de' || value === 'en' ? value : undefined
+}
+
 // ---- classification (was hooks/classify.ts) ----------------------------------
 
 type ToolClass = 'agent' | 'build' | 'research' | 'other'
@@ -63,6 +177,8 @@ type YogaStore = {
   /** Which hook registered the command, and when: a debugging breadcrumb. */
   readyFrom?: string
   readyAt?: number
+  /** The language `/yoga lang` chose, outranking the `language` option. */
+  language?: string
 }
 
 function emptyStore(): YogaStore {
@@ -104,6 +220,7 @@ function toStore(value: unknown): YogaStore {
     skipUntil: typeof v.skipUntil === 'number' ? v.skipUntil : 0,
     readyFrom: typeof v.readyFrom === 'string' ? v.readyFrom : undefined,
     readyAt: typeof v.readyAt === 'number' ? v.readyAt : undefined,
+    language: typeof v.language === 'string' ? v.language : undefined,
   }
 }
 
@@ -178,32 +295,32 @@ const SAMPLE_FILE: ClipsFile = {
   clips: [
     {
       id: '0d1f6a2e-1111-4a0b-9c3d-000000000001',
-      url: 'https://www.youtube.com/watch?v=beispiel-schultern',
+      url: 'https://www.youtube.com/watch?v=example-shoulders',
       source: 'youtube',
-      title: 'Schulteröffner im Sitzen',
-      teacher: 'Beispiel-Lehrerin',
+      title: 'Seated shoulder opener',
+      teacher: 'Example Teacher',
       durationSec: 180,
-      tags: ['schultern', 'sitzen'],
+      tags: ['shoulders', 'seated'],
       addedAt: '2026-11-09T08:00:00Z',
     },
     {
       id: '0d1f6a2e-1111-4a0b-9c3d-000000000002',
-      url: 'https://www.youtube.com/watch?v=beispiel-nacken',
+      url: 'https://www.youtube.com/watch?v=example-neck',
       source: 'youtube',
-      title: 'Nacken und oberer Rücken',
-      teacher: 'Beispiel-Lehrer',
+      title: 'Neck and upper back',
+      teacher: 'Example Teacher',
       durationSec: 300,
-      tags: ['nacken', 'ruecken', 'sitzen'],
+      tags: ['neck', 'back', 'seated'],
       addedAt: '2026-11-09T08:00:00Z',
     },
     {
       id: '0d1f6a2e-1111-4a0b-9c3d-000000000003',
       url: 'https://vimeo.com/000000003',
       source: 'vimeo',
-      title: 'Hüftöffner im Stehen',
-      teacher: 'Beispiel-Lehrerin',
+      title: 'Standing hip opener',
+      teacher: 'Example Teacher',
       durationSec: 420,
-      tags: ['huefte', 'stehen'],
+      tags: ['hips', 'standing'],
       addedAt: '2026-11-09T08:00:00Z',
     },
   ],
@@ -220,8 +337,8 @@ function toClip(value: unknown): Clip | undefined {
     id: typeof v.id === 'string' && v.id !== '' ? v.id : v.url,
     url: v.url,
     source: SOURCES.includes(v.source as ClipSource) ? (v.source as ClipSource) : 'other',
-    title: typeof v.title === 'string' && v.title !== '' ? v.title : 'Ohne Titel',
-    teacher: typeof v.teacher === 'string' && v.teacher !== '' ? v.teacher : 'unbekannt',
+    title: typeof v.title === 'string' && v.title !== '' ? v.title : T().untitled,
+    teacher: typeof v.teacher === 'string' && v.teacher !== '' ? v.teacher : T().unknownTeacher,
     durationSec: Math.round(v.durationSec),
     tags: Array.isArray(v.tags) ? v.tags.filter((t): t is string => typeof t === 'string') : [],
     addedAt: typeof v.addedAt === 'string' ? v.addedAt : '',
@@ -237,10 +354,10 @@ function parseClips(text: string): ParsedClips {
   try {
     data = JSON.parse(text)
   } catch (error) {
-    return { file: { clips: [] }, clips: [], warning: `clips.json ist kein gültiges JSON (${String(error)})` }
+    return { file: { clips: [] }, clips: [], warning: T().notJson(String(error)) }
   }
   if (typeof data !== 'object' || data === null || !Array.isArray((data as ClipsFile).clips)) {
-    return { file: { clips: [] }, clips: [], warning: 'clips.json hat kein Feld "clips" mit einer Liste' }
+    return { file: { clips: [] }, clips: [], warning: T().noClipsField }
   }
   const raw = (data as ClipsFile).clips as unknown[]
   const clips = raw.map(toClip).filter((c): c is Clip => c !== undefined)
@@ -248,7 +365,7 @@ function parseClips(text: string): ParsedClips {
   return {
     file: { ...(data as ClipsFile), clips },
     clips,
-    warning: skipped > 0 ? `${skipped} Eintrag/Einträge in clips.json übersprungen (URL oder durationSec fehlt)` : undefined,
+    warning: skipped > 0 ? T().skipped(skipped) : undefined,
   }
 }
 
@@ -341,12 +458,12 @@ async function probe($: EngineInterface, isReady: boolean): Promise<string> {
   results.push(await tryProbe('fs.exists ~/.yoga/clips.json', async () => `${await clipsPath($)} -> ${await $.fs.exists(await clipsPath($))}`))
   results.push(await tryProbe('fs.write ~/.yoga/debug-probe.txt', async () => {
     await $.fs.write((await clipsPath($)).replace(/clips\.json$/, 'debug-probe.txt'), 'fs.write ok\n')
-    return 'geschrieben'
+    return T().probeWritten
   }))
   results.push(await tryProbe('store.get', async () => JSON.stringify(await $.store.get(STORE_KEY))?.slice(0, 120) ?? 'undefined'))
   results.push(await tryProbe('store.set probe', async () => {
     await $.store.set('probe', { at: await $.clock.now() })
-    return 'gesetzt'
+    return T().probeSet
   }))
   results.push(await tryProbe('state.get suggestion', async () => JSON.stringify(await read($, suggestion))))
   results.push(await tryProbe('process.run true', async () => {
@@ -354,8 +471,8 @@ async function probe($: EngineInterface, isReady: boolean): Promise<string> {
     return `exit ${ran.exitCode}`
   }))
   const lines = [
-    `yoga-break Diagnose · Mod-Ordner ${root} · /yoga registriert: ${isReady ? 'ja' : 'nein'}`,
-    ...results.map(r => `${r.ok ? 'OK  ' : 'FEHL'} ${r.name}: ${r.detail}`),
+    T().probeHeader(root, isReady),
+    ...results.map(r => `${r.ok ? T().ok : T().fail} ${r.name}: ${r.detail}`),
   ]
   const report = lines.join('\n')
   // The report also goes to a file next to clips.json (never into the mod folder,
@@ -365,7 +482,7 @@ async function probe($: EngineInterface, isReady: boolean): Promise<string> {
     await $.fs.write(reportPath, report + '\n')
     return ''
   })
-  return report + `\n(Bericht auch in ${reportPath})`
+  return report + '\n' + T().probeReport(reportPath)
 }
 
 // ---- the mod ------------------------------------------------------------------------
@@ -402,7 +519,7 @@ async function ensureClipsFile($: EngineInterface): Promise<void> {
   const path = await clipsPath($)
   if (await $.fs.exists(path)) return
   await $.fs.write(path, JSON.stringify(SAMPLE_FILE, null, 2) + '\n')
-  $.ui.log(`yoga-break: Beispieldatei mit 3 Clips angelegt: ${path}`)
+  $.ui.log(T().sampleCreated(path))
 }
 
 /** Reads the clips; a missing or broken file is a warning, never a crash. */
@@ -412,7 +529,7 @@ async function loadClips($: EngineInterface): Promise<{ file: ClipsFile; clips: 
   try {
     text = await $.fs.read(path)
   } catch {
-    $.ui.log(`yoga-break: ${path} fehlt oder ist nicht lesbar`)
+    $.ui.log(T().fileUnreadable(path))
     return { file: { clips: [] }, clips: [] }
   }
   const parsed = parseClips(text)
@@ -424,7 +541,7 @@ async function loadClips($: EngineInterface): Promise<{ file: ClipsFile; clips: 
 
 async function openUrl($: EngineInterface, url: string): Promise<void> {
   if (!/^https?:\/\//.test(url)) {
-    $.ui.toast('Clip-URL ist keine http(s)-Adresse')
+    $.ui.toast(T().notHttp)
     return
   }
   for (const argv of [['open', url], ['xdg-open', url]]) {
@@ -435,7 +552,7 @@ async function openUrl($: EngineInterface, url: string): Promise<void> {
       // the opener is not installed on this platform: try the next one
     }
   }
-  $.ui.toast(`Browser ließ sich nicht öffnen: ${url}`)
+  $.ui.toast(T().browserFailed(url))
 }
 
 // ---- marking a clip done -------------------------------------------------------
@@ -446,7 +563,7 @@ async function markDone($: EngineInterface, clip: Clip): Promise<string> {
   store.done = [...store.done, { id: clip.id, at: now }].slice(-500)
   await saveStore($, store)
   const minutes = marksOfDay(store.done, now).reduce((sum, m) => sum + (m.id === clip.id ? clip.durationSec : 0), 0)
-  return `Erledigt: ${clip.title} (${fmtClock(clip.durationSec)}). Heute mit diesem Clip: ${Math.round(minutes / 60)} min.`
+  return T().done(clip.title, fmtClock(clip.durationSec), Math.round(minutes / 60))
 }
 
 // Long tool calls of the main loop that run right now, by tool_use_id. Module
@@ -518,7 +635,7 @@ async function suggest(
     if (!options.isForced) store.lastSuggestedAt = now
     await saveStore($, store)
     if (!options.isForced) {
-      $.ui.toast(`~${fmtClock(freeSec)} frei – ${clip.title} mit ${clip.teacher} (${fmtClock(clip.durationSec)}) · /yoga open`, {
+      $.ui.toast(T().toast(fmtClock(freeSec), clip.title, clip.teacher, fmtClock(clip.durationSec)), {
         timeoutMs: 12_000,
       })
     }
@@ -530,11 +647,18 @@ async function suggest(
 async function ensureReady($: EngineInterface, from: string): Promise<void> {
     if (isReady) return
     isReady = true
+    // `/yoga lang` outranks the `language` option; the option outranks English.
+    try {
+      const stored = toLang((await loadStore($)).language)
+      if (stored !== undefined) lang = stored
+    } catch {
+      // no store: the option or English stands
+    }
     try {
       await $.command.register({
         name: 'yoga',
-        description: 'Yoga-Pause: passender Clip und Statistik; skip | done <id> | add <url> <sek> [teacher] [titel] | open',
-        argumentHint: '[skip | done <id> | add <url> <sekunden> [teacher] [titel] | open]',
+        description: T().commandDescription,
+        argumentHint: T().argumentHint,
         immediate: true,
       })
     } catch (error) {
@@ -545,7 +669,7 @@ async function ensureReady($: EngineInterface, from: string): Promise<void> {
     try {
       await ensureClipsFile($)
     } catch (error) {
-      $.ui.log(`yoga-break: clips.json konnte nicht angelegt werden (${String(error)})`)
+      $.ui.log(T().sampleFailed(String(error)))
     }
     try {
       const store = await loadStore($)
@@ -557,7 +681,9 @@ async function ensureReady($: EngineInterface, from: string): Promise<void> {
     }
   }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  lang = toLang(options.language) ?? 'en'
+
   on('session.start', async ($, e, next) => {
     await ensureReady($, 'session.start')
     return next(e)
@@ -627,14 +753,12 @@ export const register: Register = on => {
 
     return (
       <Box>
-        <Text>
-          🧘 ~{fmtClock(offered.freeSec)} frei – {offered.title} mit {offered.teacher} ({fmtClock(offered.durationSec)}){' '}
-        </Text>
-        <Button key="open" label="Öffnen" hotkey="o" onPress={() => void openUrl($, offered.url)} />
+        <Text>{T().band(fmtClock(offered.freeSec), offered.title, offered.teacher, fmtClock(offered.durationSec))}</Text>
+        <Button key="open" label={T().open} hotkey="o" onPress={() => void openUrl($, offered.url)} />
         <Text> </Text>
         <Button
           key="done"
-          label="Erledigt"
+          label={T().markDone}
           hotkey="e"
           onPress={() =>
             void markDone($, clip).then(text => {
@@ -644,7 +768,7 @@ export const register: Register = on => {
           }
         />
         <Text> </Text>
-        <Button key="later" label="Später" hotkey="s" onPress={() => void update($, suggestion, () => null)} />
+        <Button key="later" label={T().later} hotkey="s" onPress={() => void update($, suggestion, () => null)} />
       </Box>
     )
   })
@@ -669,29 +793,27 @@ export const register: Register = on => {
 
       const lines: string[] = []
       if (offered === undefined) {
-        lines.push(`🧘 Kein Clip passt in ~${fmtClock(freeSec)} (Clip-Dauer muss <= Restzeit - ${MARGIN_SEC} s sein).`)
+        lines.push(T().noFit(fmtClock(freeSec), MARGIN_SEC))
       } else {
-        lines.push(`🧘 Jetzt passend: ${offered.title} mit ${offered.teacher} (${fmtClock(offered.durationSec)})`)
+        lines.push(T().fitsNow(offered.title, offered.teacher, fmtClock(offered.durationSec)))
         lines.push(`   ${offered.url}`)
-        lines.push(`   id ${offered.clipId}`)
-        lines.push(
-          `   bei ~${fmtClock(freeSec)} ${isRunning ? 'erwarteter Restzeit des laufenden Tool-Calls' : 'angenommener Wartezeit (längster Median)'}`,
-        )
-        lines.push('   /yoga open öffnet den Clip, /yoga done zählt ihn.')
+        lines.push(T().id(offered.clipId))
+        lines.push(T().at(fmtClock(freeSec), isRunning))
+        lines.push(T().hint)
       }
       const doneToday = marksOfDay(store.done, now)
       const { clips } = await loadClips($)
       const minutes = doneToday.reduce((sum, m) => sum + (findClip(clips, m.id)?.durationSec ?? 0), 0) / 60
       lines.push('')
-      lines.push(`Heute: ${Math.round(minutes)} Yoga-Minuten (${doneToday.length} Clips), ${marksOfDay(store.suggested, now).length} Vorschläge`)
+      lines.push(T().today(Math.round(minutes), doneToday.length, marksOfDay(store.suggested, now).length))
       lines.push(
-        'Mediane: ' +
+        T().medians +
           TOOL_CLASSES_ORDER.map(cls => {
             const n = store.durations[cls].length
-            return `${cls} ${fmtClock(expectedSec(store.durations, cls))}${n === 0 ? ' (Default)' : ` (${n})`}`
+            return `${cls} ${fmtClock(expectedSec(store.durations, cls))}${n === 0 ? T().defaultTag : ` (${n})`}`
           }).join(', '),
       )
-      if (store.skipUntil > now) lines.push(`Vorschläge pausiert bis ${fmtTime(store.skipUntil)}.`)
+      if (store.skipUntil > now) lines.push(T().paused(fmtTime(store.skipUntil)))
       return { text: lines.join('\n') }
     }
 
@@ -699,22 +821,22 @@ export const register: Register = on => {
       store.skipUntil = now + SKIP_MS
       await saveStore($, store)
       await update($, suggestion, () => null)
-      return { text: `Keine Yoga-Vorschläge bis ${fmtTime(store.skipUntil)}.` }
+      return { text: T().skipped60(fmtTime(store.skipUntil)) }
     }
 
     if (sub === 'open') {
       const offered = await read($, suggestion)
-      if (offered === null) return { text: 'Kein Vorschlag offen. /yoga zeigt den passenden Clip.' }
+      if (offered === null) return { text: T().nothingOpen }
       await openUrl($, offered.url)
-      return { text: `Geöffnet: ${offered.title} – ${offered.url}` }
+      return { text: T().opened(offered.title, offered.url) }
     }
 
     if (sub === 'done') {
       const { clips } = await loadClips($)
       const id = words[1] ?? (await read($, suggestion))?.clipId
-      if (id === undefined) return { text: 'Verwendung: /yoga done <id> (ohne id: der offene Vorschlag).' }
+      if (id === undefined) return { text: T().usageDone }
       const clip = findClip(clips, id)
-      if (clip === undefined) return { text: `Kein Clip mit id ${id} in clips.json.` }
+      if (clip === undefined) return { text: T().noSuchClip(id) }
       const text = await markDone($, clip)
       await update($, suggestion, () => null)
       return { text }
@@ -724,26 +846,36 @@ export const register: Register = on => {
       const [, url, secondsText, teacher, ...titleWords] = words
       const seconds = Number(secondsText)
       if (url === undefined || !/^https?:\/\//.test(url) || !(seconds > 0)) {
-        return { text: 'Verwendung: /yoga add <url> <sekunden> [teacher] [titel]' }
+        return { text: T().usageAdd }
       }
       const { file } = await loadClips($)
       const clip: Clip = {
         id: crypto.randomUUID(),
         url,
         source: sourceOf(url),
-        title: titleWords.length > 0 ? titleWords.join(' ') : 'Ohne Titel',
-        teacher: teacher ?? 'unbekannt',
+        title: titleWords.length > 0 ? titleWords.join(' ') : T().untitled,
+        teacher: teacher ?? T().unknownTeacher,
         durationSec: Math.round(seconds),
         tags: [],
         addedAt: new Date(now).toISOString(),
       }
       const next: ClipsFile = { ...file, clips: [...file.clips, clip] }
       await $.fs.write(await clipsPath($), JSON.stringify(next, null, 2) + '\n')
-      return { text: `Clip hinzugefügt: ${clip.title} mit ${clip.teacher} (${fmtClock(clip.durationSec)}), id ${clip.id}` }
+      return { text: T().added(clip.title, clip.teacher, fmtClock(clip.durationSec), clip.id) }
     }
 
-    return { text: 'Verwendung: /yoga | /yoga skip | /yoga done <id> | /yoga add <url> <sekunden> [teacher] [titel] | /yoga open' }
+    if (sub === 'lang') {
+      const chosen = toLang(words[1])
+      if (chosen === undefined) return { text: T().usageLang }
+      lang = chosen
+      store.language = chosen
+      await saveStore($, store)
+      await $.command.register({ name: 'yoga', description: T().commandDescription, argumentHint: T().argumentHint, immediate: true })
+      return { text: T().langSet(chosen) }
+    }
+
+    return { text: T().usage }
   }).catch(($, e, next) => ({
-    text: `yoga-break: /yoga ${e.args} ist fehlgeschlagen (${next.error.kind}: ${next.error.message ?? 'ohne Meldung'}).`,
+    text: T().failed(e.args, next.error.kind, next.error.message ?? T().noMessage),
   }))
 }

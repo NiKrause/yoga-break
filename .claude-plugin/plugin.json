@@ -1,6 +1,6 @@
 {
   "name": "yoga-break",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Suggests a short yoga clip that fits into a long tool call's waiting time.",
   "author": {
     "name": "Nico Krause"
@@ -15,5 +15,17 @@
     "mod",
     "status-line"
   ],
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the mod's texts: en (default) or de. /yoga lang de switches too.",
+      "default": "en",
+      "options": [
+        "en",
+        "de"
+      ]
+    }
+  }
 }

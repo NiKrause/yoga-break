@@ -2,7 +2,7 @@
 
 A mod for Claude Code: while Claude is busy with something long (an agent run,
 a build, a test suite, a web search), it offers a short yoga clip that fits into
-the waiting time. UI texts are German; code and comments are English.
+the waiting time. Its texts are English by default and German on request.
 
 ## What it does
 
@@ -30,6 +30,17 @@ the waiting time. UI texts are German; code and comments are English.
 | `/yoga done <id>` | marks a clip as done (counts into the statistics); without an id, the open suggestion |
 | `/yoga add <url> <seconds> [teacher] [title]` | appends a clip to `clips.json` |
 | `/yoga open` | opens the clip of the open suggestion |
+| `/yoga lang en\|de` | switches the mod's language |
+| `/yoga debug` | checks every host function the mod relies on and writes a report to `~/.yoga/debug-report.txt` |
+
+### Language
+
+English is the default. Two ways to switch to German, in order of precedence:
+
+- `/yoga lang de` (back with `/yoga lang en`); the choice is kept in the mod's store.
+- The `language` option in Claude Code's config menu (`/config`, row *Language* under yoga-break), or `pluginConfigs` in settings.
+
+Code, comments and this README stay English.
 
 ### Where the data lives
 
@@ -124,6 +135,7 @@ hooks/register.tsx           the whole module, in sections: classification,
                              statistics (ring buffer, median), clips.json,
                              hooks, band, slash command, status line
 types/index.d.ts             the $.state contract (the open suggestion)
+tests/yoga.test.ts           `claude plugin test`: /yoga in English and German
 ```
 
 The module is one file, and every helper that takes `$` is a top-level
