@@ -1,6 +1,6 @@
 {
   "name": "yoga-break",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Suggests a short yoga clip that fits into a long tool call's waiting time.",
   "author": {
     "name": "Nico Krause"
@@ -26,6 +26,12 @@
         "en",
         "de"
       ]
+    },
+    "playlist": {
+      "type": "string",
+      "title": "Playlist link",
+      "description": "A playlist link from Yoga Clips (https://yoga-clips.le-space.de/?db=/orbitdb/...). When set, a clip opens there in the player instead of at its own address. /yoga playlist <link> sets it too.",
+      "default": ""
     }
   }
 }

@@ -17,7 +17,9 @@ the waiting time. Its texts are English by default and German on request.
   clip is suggested: a toast plus a band above the prompt with
   `[Open] [Done] [Later]` (German: `[Öffnen] [Erledigt] [Später]`). `Open`
   (hotkey `o` while the band has the focus) opens the clip in the browser with
-  `open` or `xdg-open`.
+  `open` or `xdg-open`: at its own address, or in
+  [Yoga Clips](https://github.com/NiKrause/yoga-clips) when a playlist link is
+  set (below).
 - The clip is the longest one whose length is at most the expected remaining
   time minus 20 s; clips already suggested today rank after the others.
 - When the tool call ends, or when Claude waits for input, status and band go.
@@ -31,6 +33,7 @@ the waiting time. Its texts are English by default and German on request.
 | `/yoga done <id>` | marks a clip as done (counts into the statistics); without an id, the open suggestion |
 | `/yoga add <url> <seconds> [teacher] [title]` | appends a clip to `clips.json` |
 | `/yoga open` | opens the clip of the open suggestion |
+| `/yoga playlist <link>\|off` | opens clips in Yoga Clips, in the playlist the link names; `off` opens them at their own address again; without an argument, shows the setting |
 | `/yoga lang en\|de` | switches the mod's language |
 
 ### Language
@@ -41,6 +44,32 @@ English is the default. Two ways to switch to German, in order of precedence:
 - The `language` option in Claude Code's config menu (`/config`, row *Language* under yoga-break), or `pluginConfigs` in settings.
 
 Code, comments and this README stay English.
+
+### Opening clips in Yoga Clips
+
+[Yoga Clips](https://github.com/NiKrause/yoga-clips) is the PWA the clips are
+collected in; its *Export* writes `clips.json`. By default `Open` goes to the
+clip's own address (YouTube, Instagram, Vimeo). With a playlist link set it
+goes to the app instead, which opens the playlist and plays the clip in its
+player, where it can be marked done as well:
+
+```
+/yoga playlist https://yoga-clips.le-space.de/?db=/orbitdb/zdpu...
+```
+
+The link is the one the app's *Share* panel shows. The mod keeps the app's
+address and the `?db=` part and drops the rest; it must be `https` (`http`
+only for `localhost`). Opening a clip adds `&clip=<id>`. The other way to set
+it is the `playlist` option in Claude Code's config menu; `/yoga playlist`
+outranks the option, `/yoga playlist off` included.
+
+Two things to know:
+
+- A clip added with `/yoga add` is in `clips.json` only. The app does not have
+  it until the file is imported there, and says so when the link asks for it;
+  `/yoga` prints the clip's own address too.
+- A clip whose id the app's links would not take (anything but 8 to 64 letters,
+  digits, `-` and `_`) opens at its own address.
 
 ### Where the data lives
 
@@ -60,12 +89,16 @@ behaviour listed here; there is nothing else.
 
 - **No network access.** The mod makes no HTTP request and opens no socket.
 - **Host commands:** `open <url>` (macOS) or `xdg-open <url>` (Linux) when you
-  press `Open` or run `/yoga open`. Each is one literal call in the module,
-  with the clip's own `http(s)` URL as its only argument; nothing else is run.
+  press `Open` or run `/yoga open`. Each is one literal call in the module
+  with one argument: the clip's own `http(s)` URL, or, when you set a playlist
+  link, that link with the clip's id added (`&clip=<id>`). The mod itself does
+  not contact the app: the browser does, when it opens the link. Nothing else
+  is run.
 - **Files:** reads and writes `~/.yoga/clips.json` (your clips), and no other
   file. Every `$.fs` call in the module names that path in full.
 - **Claude Code's own stores:** the plugin's key-value store for durations,
-  suggestions, completed clips, the skip timer and the language; the session
+  suggestions, completed clips, the skip timer, the language and the playlist
+  link; the session
   state for the open suggestion; the `HOME` environment variable to find
   `~/.yoga`.
 - **Interface:** a toast, the band above the prompt, the status line, and
@@ -107,8 +140,9 @@ or, for sessions started by the desktop app, with the folder named in
 
 ## Schema of `~/.yoga/clips.json`
 
-The file is exported by an OrbitDB-based PWA later on. The mod reads it and
-only appends entries of the same shape; it never changes the schema.
+The file is what [Yoga Clips](https://github.com/NiKrause/yoga-clips) exports
+(the app adds a ninth field, `addedBy`, which the mod ignores). The mod reads
+it and only appends entries of the same shape; it never changes the schema.
 
 ```json
 {
@@ -140,7 +174,8 @@ hooks/register.tsx           the whole module, in sections: classification,
                              statistics (ring buffer, median), clips.json,
                              hooks, band, slash command, status line
 types/index.d.ts             the $.state contract (the open suggestion)
-tests/yoga.test.ts           `claude plugin test`: /yoga in English and German
+tests/yoga.test.ts           `claude plugin test`: /yoga in English and German,
+                             the playlist link
 ```
 
 The module is one file, and every helper that takes `$` is a top-level
