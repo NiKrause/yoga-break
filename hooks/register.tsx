@@ -33,10 +33,14 @@ const MESSAGES = {
     fitsNow: (title: string, teacher: string, len: string) => `🧘 Fits now: ${title} with ${teacher} (${len})`,
     id: (id: string) => `   id ${id}`,
     at: (free: string, isRunning: boolean) =>
-      `   for ~${free} ${isRunning ? 'expected to remain of the running tool call' : 'of assumed waiting time (longest median)'}`,
+      `   for ~${free} ${isRunning ? 'expected to remain of what is running' : 'of assumed waiting time (what a long turn has left after its first minute)'}`,
     hint: '   /yoga open opens the clip, /yoga done counts it.',
     today: (min: number, clips: number, suggested: number) => `Today: ${min} yoga minutes (${clips} clips), ${suggested} suggestions`,
     medians: 'Medians: ',
+    turns: (len: string, n: number, min: number) =>
+      n < min
+        ? `Long turns (1 min or more): ${n} measured, assuming ${len} until there are ${min}`
+        : `Long turns (1 min or more): median ${len} (${n})`,
     defaultTag: ' (default)',
     paused: (until: string) => `Suggestions paused until ${until}.`,
     skipped60: (until: string) => `No yoga suggestions until ${until}.`,
@@ -82,10 +86,14 @@ const MESSAGES = {
     fitsNow: (title: string, teacher: string, len: string) => `🧘 Jetzt passend: ${title} mit ${teacher} (${len})`,
     id: (id: string) => `   id ${id}`,
     at: (free: string, isRunning: boolean) =>
-      `   bei ~${free} ${isRunning ? 'erwarteter Restzeit des laufenden Tool-Calls' : 'angenommener Wartezeit (längster Median)'}`,
+      `   bei ~${free} ${isRunning ? 'erwarteter Restzeit der laufenden Arbeit' : 'angenommener Wartezeit (Rest eines langen Turns nach der ersten Minute)'}`,
     hint: '   /yoga open öffnet den Clip, /yoga done zählt ihn.',
     today: (min: number, clips: number, suggested: number) => `Heute: ${min} Yoga-Minuten (${clips} Clips), ${suggested} Vorschläge`,
     medians: 'Mediane: ',
+    turns: (len: string, n: number, min: number) =>
+      n < min
+        ? `Lange Turns (ab 1 min): ${n} gemessen, angenommen ${len}, bis es ${min} sind`
+        : `Lange Turns (ab 1 min): Median ${len} (${n})`,
     defaultTag: ' (Default)',
     paused: (until: string) => `Vorschläge pausiert bis ${until}.`,
     skipped60: (until: string) => `Keine Yoga-Vorschläge bis ${until}.`,
@@ -159,6 +167,22 @@ const LONG_SEC = 90
 /** A clip must end this many seconds before the tool call is expected to. */
 const MARGIN_SEC = 20
 
+/**
+ * A turn (from the person's message until Claude waits for them again) is
+ * looked at once it has run this long, and again after every further stretch
+ * of it. Only turns at least this long are kept.
+ */
+const TURN_CHECK_SEC = 60
+
+/** What a long turn is expected to come to while fewer than `MIN_TURNS` were measured. */
+const DEFAULT_TURN_SEC = 300
+
+/** From this many measured turns on, their median replaces the default. */
+const MIN_TURNS = 3
+
+/** Tools that wait for the person: their time is not waiting time, and not part of a turn's length. */
+const WAITS_FOR_PERSON: readonly string[] = ['AskUserQuestion', 'ExitPlanMode']
+
 /** At most one suggestion per this many milliseconds. */
 const SUGGEST_EVERY_MS = 10 * 60 * 1000
 
@@ -172,6 +196,8 @@ type Mark = { id: string; at: number }
 /** Everything the mod keeps across sessions, one JSON value in `$.store`. */
 type YogaStore = {
   durations: Durations
+  /** Seconds of the last main-loop turns that ran `TURN_CHECK_SEC` or longer and ended with an answer. */
+  turns: number[]
   suggested: Mark[]
   done: Mark[]
   lastSuggestedAt: number
@@ -188,6 +214,7 @@ type YogaStore = {
 function emptyStore(): YogaStore {
   return {
     durations: { agent: [], build: [], research: [], other: [] },
+    turns: [],
     suggested: [],
     done: [],
     lastSuggestedAt: 0,
@@ -218,6 +245,9 @@ function toStore(value: unknown): YogaStore {
       : []
   return {
     durations,
+    turns: Array.isArray(v.turns)
+      ? v.turns.filter((n): n is number => typeof n === 'number' && isFinite(n) && n >= 0).slice(-RING_SIZE)
+      : [],
     suggested: marks(v.suggested),
     done: marks(v.done),
     lastSuggestedAt: typeof v.lastSuggestedAt === 'number' ? v.lastSuggestedAt : 0,
@@ -246,6 +276,17 @@ function median(values: readonly number[]): number | undefined {
 /** The median of the class, or its default while nothing was measured. */
 function expectedSec(durations: Durations, cls: ToolClass): number {
   return median(durations[cls]) ?? DEFAULT_SEC[cls]
+}
+
+/**
+ * What a turn that has already run `elapsedSec` is expected to come to: the
+ * median of the kept turns that ran at least that long. The longer a turn
+ * runs, the fewer turns it is compared with, so the estimate grows with it.
+ */
+function expectedTurnSec(turns: readonly number[], elapsedSec: number): number {
+  const longer = turns.filter(t => t >= elapsedSec)
+  if (longer.length < MIN_TURNS) return Math.max(DEFAULT_TURN_SEC, elapsedSec)
+  return median(longer) ?? DEFAULT_TURN_SEC
 }
 
 /** `M:SS`, never negative. */
@@ -595,6 +636,21 @@ const active = new Map<string, ActiveCall>()
 let ticker: Timer | undefined
 let isReady = false
 
+/** The main loop's turn that runs right now. Module state, like `active`. */
+type ActiveTurn = {
+  turnId: string
+  startedAt: number
+  /** Milliseconds of it spent in tools that wait for the person. */
+  pausedMs: number
+  /** When it is expected to end; set by a check that found it long, else undefined. */
+  expectedUntil?: number
+  /** The pending next check. */
+  check?: Timer
+}
+let turn: ActiveTurn | undefined
+/** How many tools that wait for the person run right now. */
+let asking = 0
+
 
 async function clearAll($: EngineInterface): Promise<void> {
     active.clear()
@@ -604,13 +660,26 @@ async function clearAll($: EngineInterface): Promise<void> {
     if ((await read($, suggestion)) !== null) await update($, suggestion, () => null)
   }
 
-async function tick($: EngineInterface): Promise<void> {
-    const now = await $.clock.now()
+/** Seconds the running long tool calls and the running turn are expected to go on; negative when none is. */
+function remainingSec(now: number): number {
     let remaining = -1
     for (const call of active.values()) {
       remaining = Math.max(remaining, call.expectedSec - (now - call.startedAt) / 1000)
     }
-    $.ui.status(remaining < 0 ? undefined : `🧘 ~${fmtClock(remaining)}`)
+    if (turn?.expectedUntil !== undefined) remaining = Math.max(remaining, (turn.expectedUntil - now) / 1000)
+    return remaining
+  }
+
+async function tick($: EngineInterface): Promise<void> {
+    const remaining = remainingSec(await $.clock.now())
+    if (remaining < 0) {
+      // Nothing left to count down: the ticker rests until a call or a check starts it again.
+      ticker?.cancel()
+      ticker = undefined
+      $.ui.status(undefined)
+      return
+    }
+    $.ui.status(`🧘 ~${fmtClock(remaining)}`)
   }
 
 function startTicker($: EngineInterface): void {
@@ -663,6 +732,62 @@ async function suggest(
       })
     }
     return offered
+  }
+
+// ---- turns --------------------------------------------------------------------
+
+/** Starts watching a main-loop turn: its first check comes after `TURN_CHECK_SEC`. */
+async function beginTurn($: EngineInterface, turnId: string): Promise<void> {
+    turn?.check?.cancel()
+    const started: ActiveTurn = { turnId, startedAt: await $.clock.now(), pausedMs: 0 }
+    started.check = $.clock.after(TURN_CHECK_SEC * 1000, () => void checkTurn($, turnId))
+    turn = started
+  }
+
+/**
+ * Looks at the running turn: when it is expected to go on for `LONG_SEC` or
+ * more, the status line counts down and a clip is suggested. Runs again after
+ * every `TURN_CHECK_SEC`, with what the turn has come to by then.
+ */
+async function checkTurn($: EngineInterface, turnId: string): Promise<void> {
+    const current = turn
+    if (current === undefined || current.turnId !== turnId) return
+    current.check = $.clock.after(TURN_CHECK_SEC * 1000, () => void checkTurn($, turnId))
+    // The person is answering a question: that is not free time.
+    if (asking > 0) return
+    try {
+      const now = await $.clock.now()
+      const store = await loadStore($)
+      const elapsed = (now - current.startedAt - current.pausedMs) / 1000
+      // A question took most of it so far: by its own count the turn is still young.
+      if (elapsed < TURN_CHECK_SEC) return
+      const remaining = expectedTurnSec(store.turns, elapsed) - elapsed
+      if (turn !== current) return
+      if (remaining < LONG_SEC) {
+        current.expectedUntil = undefined
+        return
+      }
+      current.expectedUntil = now + remaining * 1000
+      startTicker($)
+      await suggest($, store, remaining, now, { isForced: false })
+    } catch (error) {
+      $.ui.log(`yoga-break: turn check failed (${String(error)})`, { to: 'debug' })
+    }
+  }
+
+/** Stops watching the turn; one that ended with an answer after `TURN_CHECK_SEC` or more is kept. */
+async function endTurn($: EngineInterface, isAnswered: boolean): Promise<void> {
+    const ended = turn
+    turn = undefined
+    asking = 0
+    if (ended === undefined) return
+    ended.check?.cancel()
+    if (!isAnswered) return
+    const sec = ((await $.clock.now()) - ended.startedAt - ended.pausedMs) / 1000
+    if (sec < TURN_CHECK_SEC) return
+    const store = await loadStore($)
+    store.turns = [...store.turns, sec].slice(-RING_SIZE)
+    await saveStore($, store)
   }
 
   // A mod loaded into a running session may see no `session.start`, so every
@@ -718,12 +843,21 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
+  // The main loop's turn begins: watch how long it runs.
+  on('turn.start', async ($, e, next) => {
+    void ensureReady($, 'turn.start')
+    if (e.agentId === undefined) await beginTurn($, e.turnId)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   // Start: classify and maybe suggest. End: record the duration.
   on('tool.call', async ($, e, next) => {
     void ensureReady($, 'tool.call')
     const cls = classify(String(e.tool), 'command' in e ? e.command : undefined)
     const startedAt = await $.clock.now()
     const isMainLoop = e.agentId === undefined
+    const isAsking = isMainLoop && WAITS_FOR_PERSON.includes(String(e.tool))
+    if (isAsking) asking += 1
 
     if (isMainLoop && cls !== 'other') {
       // Not awaited: the tool call must not wait for the store or the clips.
@@ -741,6 +875,10 @@ export const register: Register = (on, options) => {
       return await next(e)
     } finally {
       const endedAt = await $.clock.now()
+      if (isAsking) {
+        asking = Math.max(0, asking - 1)
+        if (turn !== undefined) turn.pausedMs += endedAt - startedAt
+      }
       try {
         const store = await loadStore($)
         store.durations = pushDuration(store.durations, cls, (endedAt - startedAt) / 1000)
@@ -748,14 +886,23 @@ export const register: Register = (on, options) => {
       } catch (error) {
         $.ui.log(`yoga-break: Dauer nicht gespeichert (${String(error)})`, { to: 'debug' })
       }
-      if (active.delete(e.tool_use_id) && active.size === 0) await clearAll($)
+      // The last long call ended. While the turn itself is still expected to
+      // run, its countdown and its suggestion stay.
+      if (active.delete(e.tool_use_id) && active.size === 0 && remainingSec(endedAt) < 0) await clearAll($)
     }
   }).catch(($, e, next) => next(e))
 
   // Claude waits for input: nothing to fill any more.
   on('turn.complete', async ($, e, next) => {
     void ensureReady($, 'turn.complete')
-    if (e.agentId === undefined) await clearAll($)
+    if (e.agentId === undefined) {
+      try {
+        await endTurn($, e.reason === 'answer')
+      } catch (error) {
+        $.ui.log(`yoga-break: turn not kept (${String(error)})`, { to: 'debug' })
+      }
+      await clearAll($)
+    }
     return next(e)
   })
 
@@ -804,13 +951,17 @@ export const register: Register = (on, options) => {
     const store = await loadStore($)
 
     if (sub === undefined) {
-      // Free time: what the running long call has left, else the longest class median.
-      let freeSec = -1
-      for (const call of active.values()) {
-        freeSec = Math.max(freeSec, call.expectedSec - (now - call.startedAt) / 1000)
-      }
+      // Free time: what the running long call or turn has left. Else an
+      // assumption: what a long turn has left at its first check, or the
+      // longest class median when that is more.
+      let freeSec = remainingSec(now)
       const isRunning = freeSec >= 0
-      if (!isRunning) freeSec = Math.max(...TOOL_CLASSES_ORDER.map(cls => expectedSec(store.durations, cls)))
+      if (!isRunning) {
+        freeSec = Math.max(
+          expectedTurnSec(store.turns, TURN_CHECK_SEC) - TURN_CHECK_SEC,
+          ...TOOL_CLASSES_ORDER.map(cls => expectedSec(store.durations, cls)),
+        )
+      }
       const offered = await suggest($, store, freeSec, now, { isForced: true })
 
       const lines: string[] = []
@@ -837,6 +988,7 @@ export const register: Register = (on, options) => {
             return `${cls} ${fmtClock(expectedSec(store.durations, cls))}${n === 0 ? T().defaultTag : ` (${n})`}`
           }).join(', '),
       )
+      lines.push(T().turns(fmtClock(expectedTurnSec(store.turns, TURN_CHECK_SEC)), store.turns.length, MIN_TURNS))
       if (store.skipUntil > now) lines.push(T().paused(fmtTime(store.skipUntil)))
       return { text: lines.join('\n') }
     }

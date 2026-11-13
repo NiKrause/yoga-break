@@ -6,6 +6,18 @@ the waiting time. Its texts are English by default and German on request.
 
 ## What it does
 
+The mod looks at two waits: a whole turn, and a single long tool call.
+
+- **A turn** is the time from your message until Claude waits for you again.
+  Once a turn has run for a minute, and again after each further minute, the
+  mod estimates what it will come to: the median of the earlier turns that ran
+  at least as long (the last 50 turns of a minute or more are kept; until
+  three are measured, 5 minutes are assumed). When 90 s or more are expected
+  to remain, the status line counts down and a clip is suggested. This is what
+  catches work spread over many short tool calls, and agents that run in the
+  background, whose own tool call returns at once. Time a question to you
+  (`AskUserQuestion`, a plan to approve) stays open does not count, and a turn
+  you interrupt is not kept.
 - Every tool call is classified: `agent` (Agent/Task), `build` (Bash running
   npm/pnpm/yarn build or test, playwright, vitest, cargo, make), `research`
   (WebSearch/WebFetch), `other`.
@@ -22,13 +34,14 @@ the waiting time. Its texts are English by default and German on request.
   set (below).
 - The clip is the longest one whose length is at most the expected remaining
   time minus 20 s; clips already suggested today rank after the others.
-- When the tool call ends, or when Claude waits for input, status and band go.
+- When the tool call ends and the turn is not expected to run on, or when
+  Claude waits for input, status and band go.
 
 ### Slash commands
 
 | Command | Effect |
 | --- | --- |
-| `/yoga` | the clip that fits now, and the statistics: yoga minutes today, suggestions today, median per class |
+| `/yoga` | the clip that fits now, and the statistics: yoga minutes today, suggestions today, median per class, median of the long turns |
 | `/yoga skip` | no suggestions for 60 minutes |
 | `/yoga done <id>` | marks a clip as done (counts into the statistics); without an id, the open suggestion |
 | `/yoga add <url> <seconds> [teacher] [title]` | appends a clip to `clips.json` |
@@ -75,7 +88,7 @@ Two things to know:
 
 - Clips: `~/.yoga/clips.json` (schema below). The mod writes a sample file
   with three made-up entries if it is missing, and appends on `/yoga add`.
-- Durations, suggestions, completed clips and the skip timer: the mod's own
+- Tool call durations, turn lengths, suggestions, completed clips and the skip timer: the mod's own
   store (`$.store`), a JSON file Claude Code keeps per plugin under
   `~/.claude`.
 
@@ -96,16 +109,18 @@ behaviour listed here; there is nothing else.
   is run.
 - **Files:** reads and writes `~/.yoga/clips.json` (your clips), and no other
   file. Every `$.fs` call in the module names that path in full.
-- **Claude Code's own stores:** the plugin's key-value store for durations,
+- **Claude Code's own stores:** the plugin's key-value store for tool call
+  durations, turn lengths (seconds only, nothing of a turn's text),
   suggestions, completed clips, the skip timer, the language and the playlist
   link; the session
   state for the open suggestion; the `HOME` environment variable to find
   `~/.yoga`.
 - **Interface:** a toast, the band above the prompt, the status line, and
   transcript log lines; the slash command `/yoga`.
-- **Hooks:** `session.start` and `prompt.submit` register `/yoga`; `tool.call`
-  classifies the call, suggests a clip and records the duration; `turn.complete`
-  clears the suggestion; `ui.render` draws the band above the prompt;
+- **Hooks:** `session.start` and `prompt.submit` register `/yoga`; `turn.start`
+  notes when the main loop's turn began and reads nothing of it but its id;
+  `tool.call` classifies the call, suggests a clip and records the duration;
+  `turn.complete` keeps the turn's length and clears the suggestion; `ui.render` draws the band above the prompt;
   `command.run` answers `/yoga` only, and answers it itself, as a command
   handler does, instead of passing the event on.
 - **Nothing is sent anywhere**, no telemetry, no model calls, no data leaves
@@ -175,7 +190,7 @@ hooks/register.tsx           the whole module, in sections: classification,
                              hooks, band, slash command, status line
 types/index.d.ts             the $.state contract (the open suggestion)
 tests/yoga.test.ts           `claude plugin test`: /yoga in English and German,
-                             the playlist link
+                             the playlist link, turns
 ```
 
 The module is one file, and every helper that takes `$` is a top-level

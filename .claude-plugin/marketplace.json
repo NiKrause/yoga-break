@@ -3,7 +3,7 @@
   "owner": {
     "name": "Nico Krause"
   },
-  "description": "Claude Code mod: fits a short yoga clip into a long tool call's waiting time.",
+  "description": "Claude Code mod: fits a short yoga clip into the time a long turn or tool call leaves you waiting.",
   "plugins": [
     {
       "name": "yoga-break",
