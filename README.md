@@ -200,6 +200,8 @@ that is not JSON yields a warning and no clips, never a crash.
 
 ```
 .claude-plugin/plugin.json   manifest
+.claude-plugin/icon.png      the listing icon, rendered from brand/avatar-dark.svg
+brand/                       the Yoga Clips signet (countdown arc and clip) in SVG
 hooks/hooks.json             names the hooks module
 hooks/register.tsx           the whole module, in sections: classification,
                              statistics (ring buffer, median), clips.json,

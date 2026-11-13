@@ -1,6 +1,6 @@
 {
   "name": "yoga-break",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Suggests a short yoga clip that fits into the time a long turn or tool call leaves you waiting.",
   "author": {
     "name": "Nico Krause"
