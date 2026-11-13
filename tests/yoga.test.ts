@@ -195,3 +195,46 @@ test('time spent answering a question is not waiting time and not part of the tu
   expect(toasts).toEqual(['~3:30 free – Short with T (3:00) · /yoga open'])
   await $.turn.complete(turnEnd('t1'))
 })
+
+// ---- /yoga help: how one's own playlist gets here ----
+
+const SAMPLES = JSON.stringify({ clips: [
+  { id: '0d1f6a2e-1111-4a0b-9c3d-000000000001', url: 'https://www.youtube.com/watch?v=example-shoulders', source: 'youtube', title: 'Seated shoulder opener', teacher: 'Example Teacher', durationSec: 180, tags: [], addedAt: '' },
+  { id: 'clip-0001', url: 'https://example.com/own', source: 'other', title: 'Own', teacher: 'T', durationSec: 100, tags: [], addedAt: '' },
+] })
+
+test('/yoga help walks through Yoga Clips and says where things stand', async ($, on) => {
+  world(on, SAMPLES)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const help = (await $.command.run({ command: 'yoga', args: 'help' })).text
+  expect(help).toContain('1. Open Yoga Clips: https://yoga-clips.le-space.de')
+  expect(help).toContain('press "Create playlist"')
+  expect(help).toContain('mv ~/Downloads/clips.json ~/.yoga/clips.json')
+  expect(help).toContain('/yoga playlist <link>')
+  expect(help).toContain('Now: 2 clips in ~/.yoga/clips.json, 1 of them the samples the mod wrote.')
+  expect(help).toContain('No playlist link is set (step 5).')
+  await $.command.run({ command: 'yoga', args: 'playlist https://clips.example.com/?db=/orbitdb/zdpuExample123' })
+  expect((await $.command.run({ command: 'yoga', args: 'help' })).text).toContain(
+    'Playlist link: https://clips.example.com/?db=%2Forbitdb%2FzdpuExample123',
+  )
+})
+
+test('/yoga help in German names the German buttons', { options: { language: 'de' } }, async ($, on) => {
+  world(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const help = (await $.command.run({ command: 'yoga', args: 'help' })).text
+  expect(help).toContain('drücke „Playlist anlegen“')
+  expect(help).toContain('Jetzt: 1 Clip in ~/.yoga/clips.json.')
+})
+
+test('/yoga points at the help while a sample clip is in the file', async ($, on) => {
+  world(on, SAMPLES)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect((await $.command.run({ command: 'yoga', args: '' })).text).toContain('/yoga help shows how to bring your own playlist')
+})
+
+test('/yoga does not point at the help once only own clips are in the file', async ($, on) => {
+  world(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect((await $.command.run({ command: 'yoga', args: '' })).text).not.toContain('/yoga help')
+})

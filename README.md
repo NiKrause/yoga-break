@@ -42,6 +42,7 @@ The mod looks at two waits: a whole turn, and a single long tool call.
 | Command | Effect |
 | --- | --- |
 | `/yoga` | the clip that fits now, and the statistics: yoga minutes today, suggestions today, median per class, median of the long turns |
+| `/yoga help` | how to make your own playlist in Yoga Clips and bring it here, step by step, and where things stand (clips in the file, playlist link) |
 | `/yoga skip` | no suggestions for 60 minutes |
 | `/yoga done <id>` | marks a clip as done (counts into the statistics); without an id, the open suggestion |
 | `/yoga add <url> <seconds> [teacher] [title]` | appends a clip to `clips.json` |
@@ -57,6 +58,21 @@ English is the default. Two ways to switch to German, in order of precedence:
 - The `language` option in Claude Code's config menu (`/config`, row *Language* under yoga-break), or `pluginConfigs` in settings.
 
 Code, comments and this README stay English.
+
+### Your own playlist
+
+The mod starts with three made-up clips so that it has something to show.
+`/yoga help` walks through replacing them, and `/yoga` points at it for as
+long as one of the samples is still in the file:
+
+1. Open [Yoga Clips](https://yoga-clips.le-space.de) and create a playlist.
+2. Add clips by link.
+3. *Export clips.json* there and move the file to `~/.yoga/clips.json`.
+4. Copy the playlist's link from *Share this playlist* and run
+   `/yoga playlist <link>` (next section).
+
+The address of Yoga Clips appears in that help text only; the mod never
+contacts it.
 
 ### Opening clips in Yoga Clips
 
@@ -190,7 +206,7 @@ hooks/register.tsx           the whole module, in sections: classification,
                              hooks, band, slash command, status line
 types/index.d.ts             the $.state contract (the open suggestion)
 tests/yoga.test.ts           `claude plugin test`: /yoga in English and German,
-                             the playlist link, turns
+                             the playlist link, turns, the help
 ```
 
 The module is one file, and every helper that takes `$` is a top-level

@@ -23,8 +23,8 @@ const MESSAGES = {
     browserFailed: (url: string) => `Could not open the browser: ${url}`,
     done: (title: string, len: string, min: number) => `Done: ${title} (${len}). Today with this clip: ${min} min.`,
     toast: (free: string, title: string, teacher: string, len: string) => `~${free} free – ${title} with ${teacher} (${len}) · /yoga open`,
-    commandDescription: 'Yoga break: the clip that fits now and the statistics; skip | done <id> | add <url> <sec> [teacher] [title] | open | playlist | lang',
-    argumentHint: '[skip | done <id> | add <url> <seconds> [teacher] [title] | open | playlist <link>|off | lang en|de]',
+    commandDescription: 'Yoga break: the clip that fits now and the statistics; help | skip | done <id> | add <url> <sec> [teacher] [title] | open | playlist | lang',
+    argumentHint: '[help | skip | done <id> | add <url> <seconds> [teacher] [title] | open | playlist <link>|off | lang en|de]',
     band: (free: string, title: string, teacher: string, len: string) => `🧘 ~${free} free – ${title} with ${teacher} (${len}) `,
     open: 'Open',
     markDone: 'Done',
@@ -58,8 +58,27 @@ const MESSAGES = {
     playlistNow: (link: string) => `Clips open in the app: ${link}\n/yoga playlist off opens them at their own address again.`,
     playlistNone: 'No playlist link is set: clips open at their own address. /yoga playlist <link> opens them in Yoga Clips.',
     playlistInvalid: 'Not a playlist link. It must be an https address; if it names a playlist, as ?db=/orbitdb/…',
+    helpHint: '/yoga help shows how to bring your own playlist from Yoga Clips.',
+    help: (app: string, clips: number, samples: number, playlist: string) =>
+      [
+        '🧘 Your own playlist, in five steps',
+        '',
+        `1. Open Yoga Clips: ${app}`,
+        '   The first start asks for your consent and an identity (a passkey, or anonymous).',
+        '2. Under "Playlists", in "New playlist": give it a name and press "Create playlist".',
+        '3. Under "Add a clip": paste a YouTube, Vimeo or Instagram link, check the duration, press "Add clip". Repeat for each clip.',
+        '4. Under "clips.json": press "Export clips.json" and put the file where the mod reads it:',
+        '      mv ~/Downloads/clips.json ~/.yoga/clips.json',
+        '   (your browser may save it elsewhere). From then on the mod suggests your clips. Export again after adding clips.',
+        '5. Under "Share this playlist": copy the link and give it to the mod:',
+        '      /yoga playlist <link>',
+        '   "Open" then plays the clip in Yoga Clips instead of at its own address.',
+        '',
+        `Now: ${clips} clip${clips === 1 ? '' : 's'} in ~/.yoga/clips.json${samples > 0 ? `, ${samples} of them the samples the mod wrote` : ''}.`,
+        playlist === '' ? 'No playlist link is set (step 5).' : `Playlist link: ${playlist}`,
+      ].join('\n'),
     usage:
-      'Usage: /yoga | /yoga skip | /yoga done <id> | /yoga add <url> <seconds> [teacher] [title] | /yoga open | /yoga playlist <link>|off | /yoga lang en|de',
+      'Usage: /yoga | /yoga help | /yoga skip | /yoga done <id> | /yoga add <url> <seconds> [teacher] [title] | /yoga open | /yoga playlist <link>|off | /yoga lang en|de',
     failed: (args: string, kind: string, msg: string) => `yoga-break: /yoga ${args} failed (${kind}: ${msg}).`,
     noMessage: 'no message',
   },
@@ -76,8 +95,8 @@ const MESSAGES = {
     browserFailed: (url: string) => `Browser ließ sich nicht öffnen: ${url}`,
     done: (title: string, len: string, min: number) => `Erledigt: ${title} (${len}). Heute mit diesem Clip: ${min} min.`,
     toast: (free: string, title: string, teacher: string, len: string) => `~${free} frei – ${title} mit ${teacher} (${len}) · /yoga open`,
-    commandDescription: 'Yoga-Pause: passender Clip und Statistik; skip | done <id> | add <url> <sek> [teacher] [titel] | open | playlist | lang',
-    argumentHint: '[skip | done <id> | add <url> <sekunden> [teacher] [titel] | open | playlist <link>|off | lang en|de]',
+    commandDescription: 'Yoga-Pause: passender Clip und Statistik; help | skip | done <id> | add <url> <sek> [teacher] [titel] | open | playlist | lang',
+    argumentHint: '[help | skip | done <id> | add <url> <sekunden> [teacher] [titel] | open | playlist <link>|off | lang en|de]',
     band: (free: string, title: string, teacher: string, len: string) => `🧘 ~${free} frei – ${title} mit ${teacher} (${len}) `,
     open: 'Öffnen',
     markDone: 'Erledigt',
@@ -111,8 +130,27 @@ const MESSAGES = {
     playlistNow: (link: string) => `Clips öffnen in der App: ${link}\n/yoga playlist off öffnet sie wieder an ihrer eigenen Adresse.`,
     playlistNone: 'Kein Playlist-Link gesetzt: Clips öffnen an ihrer eigenen Adresse. /yoga playlist <link> öffnet sie in Yoga Clips.',
     playlistInvalid: 'Kein Playlist-Link. Er muss eine https-Adresse sein; nennt er eine Playlist, dann als ?db=/orbitdb/…',
+    helpHint: '/yoga help zeigt, wie du deine eigene Playlist aus Yoga Clips holst.',
+    help: (app: string, clips: number, samples: number, playlist: string) =>
+      [
+        '🧘 Deine eigene Playlist, in fünf Schritten',
+        '',
+        `1. Öffne Yoga Clips: ${app}`,
+        '   Beim ersten Start fragt die App nach deiner Zustimmung und einer Identität (Passkey oder anonym).',
+        '2. Unter „Playlists“, bei „Neue Playlist“: gib ihr einen Namen und drücke „Playlist anlegen“.',
+        '3. Unter „Clip hinzufügen“: füge einen Link von YouTube, Vimeo oder Instagram ein, prüfe die Dauer, drücke „Clip hinzufügen“. Für jeden Clip wiederholen.',
+        '4. Unter „clips.json“: drücke „clips.json exportieren“ und lege die Datei dorthin, wo der Mod sie liest:',
+        '      mv ~/Downloads/clips.json ~/.yoga/clips.json',
+        '   (dein Browser speichert sie vielleicht woanders). Ab dann schlägt der Mod deine Clips vor. Nach neuen Clips erneut exportieren.',
+        '5. Unter „Diese Playlist teilen“: kopiere den Link und gib ihn dem Mod:',
+        '      /yoga playlist <link>',
+        '   „Öffnen“ spielt den Clip dann in Yoga Clips statt an seiner eigenen Adresse.',
+        '',
+        `Jetzt: ${clips} Clip${clips === 1 ? '' : 's'} in ~/.yoga/clips.json${samples > 0 ? `, davon ${samples} Beispiele, die der Mod angelegt hat` : ''}.`,
+        playlist === '' ? 'Kein Playlist-Link gesetzt (Schritt 5).' : `Playlist-Link: ${playlist}`,
+      ].join('\n'),
     usage:
-      'Verwendung: /yoga | /yoga skip | /yoga done <id> | /yoga add <url> <sekunden> [teacher] [titel] | /yoga open | /yoga playlist <link>|off | /yoga lang en|de',
+      'Verwendung: /yoga | /yoga help | /yoga skip | /yoga done <id> | /yoga add <url> <sekunden> [teacher] [titel] | /yoga open | /yoga playlist <link>|off | /yoga lang en|de',
     failed: (args: string, kind: string, msg: string) => `yoga-break: /yoga ${args} ist fehlgeschlagen (${kind}: ${msg}).`,
     noMessage: 'ohne Meldung',
   },
@@ -372,6 +410,12 @@ const SAMPLE_FILE: ClipsFile = {
     },
   ],
 }
+
+/** The ids of the made-up clips: while one is in the file, `/yoga` points at `/yoga help`. */
+const SAMPLE_IDS: ReadonlySet<string> = new Set(SAMPLE_FILE.clips.map(c => c.id))
+
+/** Where Yoga Clips lives; named in `/yoga help`, never contacted by the mod. */
+const APP_URL = 'https://yoga-clips.le-space.de'
 
 const SOURCES: readonly ClipSource[] = ['youtube', 'instagram', 'vimeo', 'other']
 
@@ -990,7 +1034,15 @@ export const register: Register = (on, options) => {
       )
       lines.push(T().turns(fmtClock(expectedTurnSec(store.turns, TURN_CHECK_SEC)), store.turns.length, MIN_TURNS))
       if (store.skipUntil > now) lines.push(T().paused(fmtTime(store.skipUntil)))
+      // Still on the made-up clips, or on none: say where the real ones come from.
+      if (clips.length === 0 || clips.some(c => SAMPLE_IDS.has(c.id))) lines.push('', T().helpHint)
       return { text: lines.join('\n') }
+    }
+
+    if (sub === 'help') {
+      const { clips } = await loadClips($)
+      const samples = clips.filter(c => SAMPLE_IDS.has(c.id)).length
+      return { text: T().help(APP_URL, clips.length, samples, playlistOf(store)) }
     }
 
     if (sub === 'skip') {
