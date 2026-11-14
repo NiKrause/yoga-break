@@ -527,10 +527,29 @@ function toPlaylistLink(value: unknown): string | undefined {
   return db === null ? base : `${base}?db=${encodeURIComponent(db)}`
 }
 
-/** The link that opens one clip in the app; `undefined` when the app would not take its id. */
-function clipLink(playlist: string, clipId: string): string | undefined {
-  if (playlist === '' || !APP_CLIP_ID.test(clipId)) return undefined
-  return `${playlist}${playlist.includes('?') ? '&' : '?'}clip=${encodeURIComponent(clipId)}`
+/** What a link into the app says about a clip. `YogaSuggestion` has these fields. */
+type LinkedClip = { clipId: string; url: string; title: string; teacher: string; durationSec: number }
+
+/** Titles and names in a link are cut to this many characters. */
+const LINK_TEXT_MAX = 120
+
+/**
+ * The link that opens one clip in the app; `undefined` when the app would not
+ * take its id. Besides the id it carries the clip itself (its own address,
+ * title, teacher and length), so the app's cinema page can play it without
+ * opening the playlist first, and a clip that is only in `clips.json` plays
+ * there too.
+ */
+function clipLink(playlist: string, clip: LinkedClip): string | undefined {
+  if (playlist === '' || !APP_CLIP_ID.test(clip.clipId)) return undefined
+  const parts = [
+    `clip=${encodeURIComponent(clip.clipId)}`,
+    `url=${encodeURIComponent(clip.url)}`,
+    `title=${encodeURIComponent(clip.title.slice(0, LINK_TEXT_MAX))}`,
+    `teacher=${encodeURIComponent(clip.teacher.slice(0, LINK_TEXT_MAX))}`,
+    `sec=${Math.round(clip.durationSec)}`,
+  ]
+  return `${playlist}${playlist.includes('?') ? '&' : '?'}${parts.join('&')}`
 }
 
 /** The playlist link in force: `/yoga playlist` outranks the option; '' means none. */
@@ -539,8 +558,8 @@ function playlistOf(store: YogaStore): string {
 }
 
 /** Where a clip opens: in the app when a playlist link is set, else at its own address. */
-function targetOf(store: YogaStore, clipId: string, url: string): string {
-  return clipLink(playlistOf(store), clipId) ?? url
+function targetOf(store: YogaStore, clip: LinkedClip): string {
+  return clipLink(playlistOf(store), clip) ?? clip.url
 }
 
 // ---- command arguments ------------------------------------------------------------------
@@ -657,8 +676,8 @@ async function openUrl($: EngineInterface, url: string): Promise<void> {
 }
 
 /** Opens a clip where the settings say, and returns the address it opened. */
-async function openClip($: EngineInterface, clipId: string, url: string): Promise<string> {
-  const target = targetOf(await loadStore($), clipId, url)
+async function openClip($: EngineInterface, clip: LinkedClip): Promise<string> {
+  const target = targetOf(await loadStore($), clip)
   await openUrl($, target)
   return target
 }
@@ -969,7 +988,7 @@ export const register: Register = (on, options) => {
     return (
       <Box>
         <Text>{T().band(fmtClock(offered.freeSec), offered.title, offered.teacher, fmtClock(offered.durationSec))}</Text>
-        <Button key="open" label={T().open} hotkey="o" onPress={() => void openClip($, offered.clipId, offered.url)} />
+        <Button key="open" label={T().open} hotkey="o" onPress={() => void openClip($, offered)} />
         <Text> </Text>
         <Button
           key="done"
@@ -1014,7 +1033,7 @@ export const register: Register = (on, options) => {
       } else {
         lines.push(T().fitsNow(offered.title, offered.teacher, fmtClock(offered.durationSec)))
         lines.push(`   ${offered.url}`)
-        const target = targetOf(store, offered.clipId, offered.url)
+        const target = targetOf(store, offered)
         if (target !== offered.url) lines.push(T().viaApp(target))
         lines.push(T().id(offered.clipId))
         lines.push(T().at(fmtClock(freeSec), isRunning))
@@ -1055,7 +1074,7 @@ export const register: Register = (on, options) => {
     if (sub === 'open') {
       const offered = await read($, suggestion)
       if (offered === null) return { text: T().nothingOpen }
-      const target = await openClip($, offered.clipId, offered.url)
+      const target = await openClip($, offered)
       return { text: T().opened(offered.title, target) }
     }
 

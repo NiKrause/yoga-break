@@ -88,15 +88,20 @@ player, where it can be marked done as well:
 
 The link is the one the app's *Share* panel shows. The mod keeps the app's
 address and the `?db=` part and drops the rest; it must be `https` (`http`
-only for `localhost`). Opening a clip adds `&clip=<id>`. The other way to set
+only for `localhost`). Opening a clip adds the clip to it: `&clip=<id>` and
+the clip's own address, title, teacher and length (`url`, `title`, `teacher`,
+`sec`), so the app's cinema page can play it straight from the link, without
+opening the playlist or asking for an identity first. The other way to set
 it is the `playlist` option in Claude Code's config menu; `/yoga playlist`
 outranks the option, `/yoga playlist off` included.
 
 Two things to know:
 
-- A clip added with `/yoga add` is in `clips.json` only. The app does not have
-  it until the file is imported there, and says so when the link asks for it;
-  `/yoga` prints the clip's own address too.
+- A clip added with `/yoga add` is in `clips.json` only. It still plays in the
+  app's cinema page, because the link carries it; it joins the playlist only
+  when the file is imported there.
+- The link holds the clip's title and teacher in clear text. It stays on your
+  machine, but it is in the browser's history like any address you open.
 - A clip whose id the app's links would not take (anything but 8 to 64 letters,
   digits, `-` and `_`) opens at its own address.
 
@@ -120,7 +125,8 @@ behaviour listed here; there is nothing else.
 - **Host commands:** `open <url>` (macOS) or `xdg-open <url>` (Linux) when you
   press `Open` or run `/yoga open`. Each is one literal call in the module
   with one argument: the clip's own `http(s)` URL, or, when you set a playlist
-  link, that link with the clip's id added (`&clip=<id>`). The mod itself does
+  link, that link with the clip added: its id, its own address, title, teacher
+  and length. The mod itself does
   not contact the app: the browser does, when it opens the link. Nothing else
   is run.
 - **Files:** reads and writes `~/.yoga/clips.json` (your clips), and no other
